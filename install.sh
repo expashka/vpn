@@ -105,6 +105,10 @@ write_config() {
     printf 'VPN_SERVER=%s\n' "$(shell_quote "${VPN_SERVER}")"
     printf 'VPN_IDENTITY=%s\n' "$(shell_quote "${VPN_IDENTITY}")"
     printf 'VPN_PASSWORD=%s\n' "$(shell_quote "${VPN_PASSWORD}")"
+    printf 'TABLE_ID=200\n'
+    printf 'TABLE_NAME=codexvpn\n'
+    printf 'ROOT_PREF=210\n'
+    printf 'ROOT_V6_PREF=211\n'
   } > "${CONFIG_FILE}"
   chmod 600 "${CONFIG_FILE}"
 }

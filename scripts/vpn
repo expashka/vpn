@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CONFIG_FILE="${CODEX_VPN_CONFIG:-/etc/codex-vpn.env}"
+[[ -r "${CONFIG_FILE}" ]] && source "${CONFIG_FILE}"
+
 CONNECTION="${VPN_CONNECTION:-nl-ikev2}"
+VPN_SERVER="${VPN_SERVER:-212.118.54.47}"
+TABLE_ID="${TABLE_ID:-200}"
+TABLE_NAME="${TABLE_NAME:-codexvpn}"
+ROOT_PREF="${ROOT_PREF:-210}"
+ROOT_V6_PREF="${ROOT_V6_PREF:-211}"
+IP_CHECK_URL="${IP_CHECK_URL:-https://api.ipify.org}"
 
 usage() {
   echo "Использование: vpn on|off|status"
@@ -14,18 +23,102 @@ require_root() {
   fi
 }
 
+detect_vpn_ip() {
+  ip -d xfrm policy 2>/dev/null | awk '
+    $1=="src" && $3=="dst" && $4=="0.0.0.0/0" {
+      split($2, a, "/")
+      candidate=a[1]
+      getline
+      if ($1=="dir" && $2=="out") { print candidate; exit }
+    }'
+}
+
+main_route() {
+  ip -4 route get "${VPN_SERVER}" table main
+}
+
+ensure_table_name() {
+  if ! awk -v id="${TABLE_ID}" -v name="${TABLE_NAME}" \
+    '$1==id && $2==name { found=1 } END { exit(found ? 0 : 1) }' \
+    /etc/iproute2/rt_tables; then
+    printf '%s %s\n' "${TABLE_ID}" "${TABLE_NAME}" >> /etc/iproute2/rt_tables
+  fi
+}
+
+configure_root_routing() {
+  local route gateway device main_ip vpn_ip dns
+  route="$(main_route)"
+  gateway="$(awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}' <<<"${route}")"
+  device="$(awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}' <<<"${route}")"
+  main_ip="$(awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}' <<<"${route}")"
+  vpn_ip="$(detect_vpn_ip)"
+
+  [[ -n "${device}" && -n "${main_ip}" ]] || {
+    echo "Не удалось определить основной интерфейс или IP: ${route}" >&2
+    exit 1
+  }
+  [[ -n "${vpn_ip}" ]] || {
+    echo "IKEv2 подключён, но виртуальный VPN IP не найден" >&2
+    exit 1
+  }
+
+  ensure_table_name
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+
+  if [[ -n "${gateway}" ]]; then
+    ip route add table "${TABLE_ID}" "${VPN_SERVER}/32" via "${gateway}" \
+      dev "${device}" onlink src "${main_ip}"
+    ip route add table "${TABLE_ID}" default via "${gateway}" \
+      dev "${device}" onlink src "${vpn_ip}"
+  else
+    ip route add table "${TABLE_ID}" "${VPN_SERVER}/32" dev "${device}" src "${main_ip}"
+    ip route add table "${TABLE_ID}" default dev "${device}" src "${vpn_ip}"
+  fi
+
+  while read -r dns; do
+    [[ -n "${dns}" ]] || continue
+    if [[ -n "${gateway}" ]]; then
+      ip route replace table "${TABLE_ID}" "${dns}/32" via "${gateway}" \
+        dev "${device}" onlink src "${main_ip}"
+    else
+      ip route replace table "${TABLE_ID}" "${dns}/32" dev "${device}" src "${main_ip}"
+    fi
+  done < <(awk '$1=="nameserver" && $2 ~ /^[0-9.]+$/ {print $2}' /etc/resolv.conf)
+
+  ip rule del pref "${ROOT_PREF}" 2>/dev/null || true
+  ip -6 rule del pref "${ROOT_V6_PREF}" 2>/dev/null || true
+  ip rule add pref "${ROOT_PREF}" uidrange 0-0 lookup "${TABLE_ID}"
+  ip -6 rule add pref "${ROOT_V6_PREF}" uidrange 0-0 prohibit
+}
+
+external_ip() {
+  curl -4 -fsS --max-time 15 "${IP_CHECK_URL}" || echo "проверка не удалась"
+}
+
 case "${1:-}" in
   on)
     require_root on
     ipsec up "${CONNECTION}"
+    configure_root_routing
+    echo "root VPN routing: on"
+    echo "root external IPv4: $(external_ip)"
     ;;
   off)
     require_root off
+    ip rule del pref "${ROOT_PREF}" 2>/dev/null || true
+    ip -6 rule del pref "${ROOT_V6_PREF}" 2>/dev/null || true
     ipsec down "${CONNECTION}" 2>/dev/null || true
-    echo "VPN ${CONNECTION}: выключен"
+    echo "root VPN routing: off"
+    echo "root external IPv4: $(external_ip)"
     ;;
   status)
     ipsec status "${CONNECTION}"
+    if ip rule show | grep -Eq "uidrange 0-0 lookup (${TABLE_NAME}|${TABLE_ID})"; then
+      echo "root VPN routing: on"
+    else
+      echo "root VPN routing: off"
+    fi
+    echo "root external IPv4: $(external_ip)"
     ;;
   -h|--help|help)
     usage
