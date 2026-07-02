@@ -177,7 +177,7 @@ enable_services() {
   systemctl restart strongswan-starter.service
 
   local loaded_cacerts
-  loaded_cacerts="$(ipsec listcacerts 2>&1)"
+  loaded_cacerts="$(ipsec listcacerts 2>&1 || true)"
   grep -q "VPN Root CA" <<<"${loaded_cacerts}" || {
     echo "${loaded_cacerts}" >&2
     die "strongSwan did not load VPN Root CA"
@@ -204,6 +204,7 @@ main() {
   need_root
   load_existing_or_local_env
   ask_config
+  echo "IKEv2 identity: ${VPN_IDENTITY}"
   echo "[1/5] Installing packages"
   install_packages
   echo "[2/5] Writing credentials"
