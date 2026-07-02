@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${CODEX_VPN_CONFIG:-/etc/codex-vpn.env}"
+REPO_RAW_URL="${CODEX_VPN_RAW_URL:-https://raw.githubusercontent.com/expashka/vpn/main}"
 
 die() {
   echo "error: $*" >&2
@@ -49,6 +50,19 @@ install_packages() {
   else
     die "this installer currently supports Debian/Ubuntu with apt-get"
   fi
+}
+
+repo_file() {
+  local rel="$1"
+  if [[ -r "${REPO_DIR}/${rel}" ]]; then
+    printf '%s\n' "${REPO_DIR}/${rel}"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  curl -fsSL "${REPO_RAW_URL}/${rel}" -o "${tmp}"
+  printf '%s\n' "${tmp}"
 }
 
 load_existing_or_local_env() {
@@ -143,9 +157,13 @@ EOF
 }
 
 install_runtime_files() {
-  install -m 0755 "${REPO_DIR}/scripts/vpn" /usr/local/bin/vpn
-  install -m 0755 "${REPO_DIR}/scripts/vpn-policy-routing.sh" /usr/local/sbin/vpn-policy-routing.sh
-  install -m 0644 "${REPO_DIR}/systemd/vpn-policy-routing.service" /etc/systemd/system/vpn-policy-routing.service
+  local vpn_script policy_script service_file
+  vpn_script="$(repo_file scripts/vpn)"
+  policy_script="$(repo_file scripts/vpn-policy-routing.sh)"
+  service_file="$(repo_file systemd/vpn-policy-routing.service)"
+  install -m 0755 "${vpn_script}" /usr/local/bin/vpn
+  install -m 0755 "${policy_script}" /usr/local/sbin/vpn-policy-routing.sh
+  install -m 0644 "${service_file}" /etc/systemd/system/vpn-policy-routing.service
 }
 
 ensure_user() {
