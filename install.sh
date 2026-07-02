@@ -114,9 +114,14 @@ write_config() {
 }
 
 write_strongswan_config() {
-  local identity_escaped password_escaped
+  local identity_escaped password_escaped local_ip
   identity_escaped="$(printf '%s' "${VPN_IDENTITY}" | ipsec_quote)"
   password_escaped="$(printf '%s' "${VPN_PASSWORD}" | ipsec_quote)"
+  local_ip="$(
+    ip -4 route get "${VPN_SERVER}" table main |
+      awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+  )"
+  [[ -n "${local_ip}" ]] || die "could not detect physical IPv4 from main routing table"
 
   install -d -m 0755 /etc/strongswan.d/charon
 
@@ -130,7 +135,7 @@ conn nl-ikev2
     rightsubnet=0.0.0.0/0
     rightauth=pubkey
 
-    left=%defaultroute
+    left=${local_ip}
     leftauth=eap-mschapv2
     eap_identity=${VPN_IDENTITY}
     leftsourceip=%config
