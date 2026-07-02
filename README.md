@@ -34,6 +34,11 @@ sudo vpn status
 - `vpn off` отключает соединение;
 - `vpn status` показывает состояние соединения.
 
+Сообщения `adding DNS server failed` и `unable to install source route` допустимы
+на этапе без настройки маршрутизации. Соединение установлено, если вывод содержит
+`IKE_SA ... established`, `CHILD_SA ... established` и
+`connection 'nl-ikev2' established successfully`.
+
 Расширенная диагностика:
 
 ```bash

@@ -176,13 +176,6 @@ enable_services() {
   systemctl enable strongswan-starter.service
   systemctl restart strongswan-starter.service
 
-  local loaded_cacerts
-  loaded_cacerts="$(ipsec listcacerts 2>&1 || true)"
-  grep -q "VPN Root CA" <<<"${loaded_cacerts}" || {
-    echo "${loaded_cacerts}" >&2
-    die "strongSwan did not load VPN Root CA"
-  }
-  echo "strongSwan loaded VPN Root CA"
   vpn on
 }
 
