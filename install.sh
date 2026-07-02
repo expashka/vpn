@@ -9,6 +9,7 @@ else
 fi
 CONFIG_FILE="${CODEX_VPN_CONFIG:-/etc/codex-vpn.env}"
 REPO_RAW_URL="${CODEX_VPN_RAW_URL:-https://raw.githubusercontent.com/expashka/vpn/main}"
+CA_SHA256="D2:70:10:0C:99:09:21:6A:DF:BF:F2:1D:D4:6A:27:7F:D8:71:69:4D:F5:12:9D:17:7E:C4:34:19:DC:AE:EF:06"
 
 die() {
   echo "error: $*" >&2
@@ -144,6 +145,16 @@ charon {
 EOF
 }
 
+install_ca_certificate() {
+  local ca_file fingerprint
+  ca_file="$(repo_file certs/ca-cert.pem)"
+  fingerprint="$(openssl x509 -in "${ca_file}" -noout -fingerprint -sha256 | cut -d= -f2)"
+  [[ "${fingerprint}" == "${CA_SHA256}" ]] || die "VPN Root CA fingerprint mismatch"
+
+  install -d -m 0755 /etc/ipsec.d/cacerts
+  install -m 0644 "${ca_file}" /etc/ipsec.d/cacerts/vpn-root-ca.pem
+}
+
 install_runtime_files() {
   local vpn_script
   vpn_script="$(repo_file scripts/vpn)"
@@ -179,6 +190,7 @@ main() {
   ask_config
   install_packages
   write_config
+  install_ca_certificate
   write_strongswan_config
   install_runtime_files
   enable_services

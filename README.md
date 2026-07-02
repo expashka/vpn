@@ -3,6 +3,9 @@
 Минимальная установка strongSwan и подключения к NL-серверу по IKEv2.
 Маршрутизация трафика на этом этапе не настраивается.
 
+Установщик также добавляет публичный корневой сертификат `VPN Root CA` и
+проверяет его SHA-256 fingerprint перед установкой.
+
 ## Установка Одной Командой
 
 Для Debian или Ubuntu:
@@ -54,6 +57,7 @@ sudo rm /etc/codex-vpn.env
 - `/etc/codex-vpn.env`
 - `/etc/ipsec.conf`
 - `/etc/ipsec.secrets`
+- `/etc/ipsec.d/cacerts/vpn-root-ca.pem`
 - `/etc/strongswan.d/charon/codex-vpn.conf`
 - `/usr/local/bin/vpn`
 
