@@ -11,8 +11,11 @@
 Для Debian или Ubuntu:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/expashka/vpn/main/install.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/expashka/vpn/main/install.sh?v=$(date +%s)" | sudo bash
 ```
+
+Параметр с текущим временем не даёт прокси провайдера использовать старую
+закэшированную версию установщика.
 
 При первом запуске установщик запросит:
 

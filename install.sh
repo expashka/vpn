@@ -9,6 +9,7 @@ else
 fi
 CONFIG_FILE="${CODEX_VPN_CONFIG:-/etc/codex-vpn.env}"
 REPO_RAW_URL="${CODEX_VPN_RAW_URL:-https://raw.githubusercontent.com/expashka/vpn/main}"
+CACHE_BUSTER="${CODEX_VPN_CACHE_BUSTER:-$(date +%s)}"
 CA_SHA256="D2:70:10:0C:99:09:21:6A:DF:BF:F2:1D:D4:6A:27:7F:D8:71:69:4D:F5:12:9D:17:7E:C4:34:19:DC:AE:EF:06"
 
 die() {
@@ -76,7 +77,7 @@ repo_file() {
 
   local tmp
   tmp="$(mktemp)"
-  curl -fsSL "${REPO_RAW_URL}/${rel}" -o "${tmp}"
+  curl -fsSL "${REPO_RAW_URL}/${rel}?v=${CACHE_BUSTER}" -o "${tmp}"
   printf '%s\n' "${tmp}"
 }
 
