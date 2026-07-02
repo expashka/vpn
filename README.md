@@ -57,7 +57,7 @@ sudo rm /etc/codex-vpn.env
 - `/etc/codex-vpn.env`
 - `/etc/ipsec.conf`
 - `/etc/ipsec.secrets`
-- `/etc/ipsec.d/cacerts/vpn-root-ca.pem`
+- `/etc/ipsec.d/cacerts/ca-cert.pem`
 - `/etc/strongswan.d/charon/codex-vpn.conf`
 - `/usr/local/bin/vpn`
 

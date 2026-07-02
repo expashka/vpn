@@ -16,6 +16,13 @@ die() {
   exit 1
 }
 
+on_error() {
+  local line="$1" code="$2"
+  echo "error: installation failed at line ${line} (exit ${code})" >&2
+}
+
+trap 'on_error "${LINENO}" "$?"' ERR
+
 need_root() {
   [[ "${EUID}" -eq 0 ]] || die "run as root: sudo ./install.sh"
 }
@@ -152,7 +159,8 @@ install_ca_certificate() {
   [[ "${fingerprint}" == "${CA_SHA256}" ]] || die "VPN Root CA fingerprint mismatch"
 
   install -d -m 0755 /etc/ipsec.d/cacerts
-  install -m 0644 "${ca_file}" /etc/ipsec.d/cacerts/vpn-root-ca.pem
+  install -m 0644 "${ca_file}" /etc/ipsec.d/cacerts/ca-cert.pem
+  echo "VPN Root CA installed (${fingerprint})"
 }
 
 install_runtime_files() {
@@ -167,6 +175,14 @@ enable_services() {
   systemctl daemon-reload
   systemctl enable strongswan-starter.service
   systemctl restart strongswan-starter.service
+
+  local loaded_cacerts
+  loaded_cacerts="$(ipsec listcacerts 2>&1)"
+  grep -q "VPN Root CA" <<<"${loaded_cacerts}" || {
+    echo "${loaded_cacerts}" >&2
+    die "strongSwan did not load VPN Root CA"
+  }
+  echo "strongSwan loaded VPN Root CA"
   vpn on
 }
 
@@ -188,11 +204,16 @@ main() {
   need_root
   load_existing_or_local_env
   ask_config
+  echo "[1/5] Installing packages"
   install_packages
+  echo "[2/5] Writing credentials"
   write_config
+  echo "[3/5] Installing VPN Root CA"
   install_ca_certificate
+  echo "[4/5] Installing strongSwan configuration"
   write_strongswan_config
   install_runtime_files
+  echo "[5/5] Starting strongSwan and IKEv2 connection"
   enable_services
   print_summary
 }
