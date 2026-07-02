@@ -114,12 +114,16 @@ write_config() {
 }
 
 write_strongswan_config() {
-  local identity_escaped password_escaped local_ip
+  local identity_escaped password_escaped main_default main_device local_ip
   identity_escaped="$(printf '%s' "${VPN_IDENTITY}" | ipsec_quote)"
   password_escaped="$(printf '%s' "${VPN_PASSWORD}" | ipsec_quote)"
+  main_default="$(ip -4 route show table main default | sed -n '1p')"
+  main_device="$(
+    awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}' <<<"${main_default}"
+  )"
   local_ip="$(
-    ip -4 route get "${VPN_SERVER}" table main |
-      awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+    ip -4 -o addr show dev "${main_device}" scope global |
+      awk '{split($4, address, "/"); print address[1]; exit}'
   )"
   [[ -n "${local_ip}" ]] || die "could not detect physical IPv4 from main routing table"
 

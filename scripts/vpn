@@ -34,7 +34,19 @@ detect_vpn_ip() {
 }
 
 main_route() {
-  ip -4 route get "${VPN_SERVER}" table main
+  local default_route device gateway main_ip
+  default_route="$(ip -4 route show table main default | sed -n '1p')"
+  device="$(awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}' <<<"${default_route}")"
+  gateway="$(awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}' <<<"${default_route}")"
+  main_ip="$(
+    ip -4 -o addr show dev "${device}" scope global |
+      awk '{split($4, address, "/"); print address[1]; exit}'
+  )"
+  if [[ -n "${gateway}" ]]; then
+    printf '%s via %s dev %s src %s\n' "${VPN_SERVER}" "${gateway}" "${device}" "${main_ip}"
+  else
+    printf '%s dev %s src %s\n' "${VPN_SERVER}" "${device}" "${main_ip}"
+  fi
 }
 
 ensure_table_name() {
