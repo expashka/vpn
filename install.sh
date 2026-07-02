@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+if [[ -n "${SCRIPT_SOURCE}" && -f "${SCRIPT_SOURCE}" ]]; then
+  REPO_DIR="$(cd -- "$(dirname -- "${SCRIPT_SOURCE}")" && pwd)"
+else
+  REPO_DIR=""
+fi
 CONFIG_FILE="${CODEX_VPN_CONFIG:-/etc/codex-vpn.env}"
 REPO_RAW_URL="${CODEX_VPN_RAW_URL:-https://raw.githubusercontent.com/expashka/vpn/main}"
 
@@ -15,20 +20,22 @@ need_root() {
 }
 
 prompt_default() {
-  local var="$1" prompt="$2" default="$3" value
+  local var="$1" prompt="$2" default="$3" value input="/dev/stdin"
   if [[ -n "${!var:-}" ]]; then
     return 0
   fi
-  read -r -p "${prompt} [${default}]: " value
+  [[ -r /dev/tty ]] && input="/dev/tty"
+  read -r -p "${prompt} [${default}]: " value < "${input}"
   printf -v "${var}" '%s' "${value:-${default}}"
 }
 
 prompt_secret() {
-  local var="$1" prompt="$2" value
+  local var="$1" prompt="$2" value input="/dev/stdin"
   if [[ -n "${!var:-}" ]]; then
     return 0
   fi
-  read -r -s -p "${prompt}: " value
+  [[ -r /dev/tty ]] && input="/dev/tty"
+  read -r -s -p "${prompt}: " value < "${input}"
   echo
   [[ -n "${value}" ]] || die "${prompt} is required"
   printf -v "${var}" '%s' "${value}"
@@ -54,7 +61,7 @@ install_packages() {
 
 repo_file() {
   local rel="$1"
-  if [[ -r "${REPO_DIR}/${rel}" ]]; then
+  if [[ -n "${REPO_DIR}" && -r "${REPO_DIR}/${rel}" ]]; then
     printf '%s\n' "${REPO_DIR}/${rel}"
     return 0
   fi
@@ -66,8 +73,9 @@ repo_file() {
 }
 
 load_existing_or_local_env() {
-  local local_env="${REPO_DIR}/codex-vpn.env"
-  if [[ -r "${local_env}" ]]; then
+  local local_env=""
+  [[ -n "${REPO_DIR}" ]] && local_env="${REPO_DIR}/codex-vpn.env"
+  if [[ -n "${local_env}" && -r "${local_env}" ]]; then
     # shellcheck disable=SC1090
     source "${local_env}"
   elif [[ -r "${CONFIG_FILE}" ]]; then
