@@ -86,6 +86,7 @@ configure_root_routing() {
   done < <(awk '$1=="nameserver" && $2 ~ /^[0-9.]+$/ {print $2}' /etc/resolv.conf)
 
   ip rule del pref "${ROOT_PREF}" 2>/dev/null || true
+  ip rule del pref 220 2>/dev/null || true
   ip -6 rule del pref "${ROOT_V6_PREF}" 2>/dev/null || true
   ip rule add pref "${ROOT_PREF}" uidrange 0-0 lookup "${TABLE_ID}"
   ip -6 rule add pref "${ROOT_V6_PREF}" uidrange 0-0 prohibit
@@ -98,6 +99,9 @@ external_ip() {
 case "${1:-}" in
   on)
     require_root on
+    # strongSwan's automatic table 220 can retain the VPN source after a
+    # restart and break the next IKE initiation. Our table replaces it.
+    ip rule del pref 220 2>/dev/null || true
     ipsec up "${CONNECTION}"
     configure_root_routing
     echo "root VPN routing: on"
