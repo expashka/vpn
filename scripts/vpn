@@ -99,8 +99,10 @@ external_ip() {
 case "${1:-}" in
   on)
     require_root on
-    # strongSwan's automatic table 220 can retain the VPN source after a
-    # restart and break the next IKE initiation. Our table replaces it.
+    # Stale root/table-220 rules can select the old VPN source and break the
+    # next IKE initiation. Re-enable root routing only after IKE is up.
+    ip rule del pref "${ROOT_PREF}" 2>/dev/null || true
+    ip -6 rule del pref "${ROOT_V6_PREF}" 2>/dev/null || true
     ip rule del pref 220 2>/dev/null || true
     ipsec up "${CONNECTION}"
     configure_root_routing
