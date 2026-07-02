@@ -88,16 +88,6 @@ ask_config() {
   prompt_default VPN_SERVER "NL VPN server IPv4" "212.118.54.47"
   prompt_default VPN_IDENTITY "NL VPN login / IKEv2 identity" "wavesdev"
   prompt_secret VPN_PASSWORD "NL VPN password"
-  prompt_default VPN_USER "Linux user that always goes through VPN" "vpn"
-  prompt_default TABLE_ID "Policy routing table id" "200"
-  prompt_default TABLE_NAME "Policy routing table name" "codexvpn"
-  prompt_default ROOT_PREF "Root IPv4 rule pref for vpn on/off" "210"
-  prompt_default ROOT_V6_PREF "Root IPv6 prohibit rule pref" "211"
-  prompt_default AUTO_ENABLE_ROOT "Enable root VPN now and on first install? 1=yes, 0=no" "1"
-  prompt_default VPN_CONTAINERS "VPN containers, space-separated name:pref entries" ""
-  prompt_default DIRECT_CIDRS "Direct CIDRs that bypass VPN, space-separated" ""
-  TELEGRAM_MSS="${TELEGRAM_MSS:-1360}"
-  IP_CHECK_URL="${IP_CHECK_URL:-https://api.ipify.org}"
 }
 
 write_config() {
@@ -106,16 +96,6 @@ write_config() {
     printf 'VPN_SERVER=%s\n' "$(shell_quote "${VPN_SERVER}")"
     printf 'VPN_IDENTITY=%s\n' "$(shell_quote "${VPN_IDENTITY}")"
     printf 'VPN_PASSWORD=%s\n' "$(shell_quote "${VPN_PASSWORD}")"
-    printf 'VPN_USER=%s\n' "$(shell_quote "${VPN_USER}")"
-    printf 'TABLE_ID=%s\n' "$(shell_quote "${TABLE_ID}")"
-    printf 'TABLE_NAME=%s\n' "$(shell_quote "${TABLE_NAME}")"
-    printf 'ROOT_PREF=%s\n' "$(shell_quote "${ROOT_PREF}")"
-    printf 'ROOT_V6_PREF=%s\n' "$(shell_quote "${ROOT_V6_PREF}")"
-    printf 'AUTO_ENABLE_ROOT=%s\n' "$(shell_quote "${AUTO_ENABLE_ROOT}")"
-    printf 'VPN_CONTAINERS=%s\n' "$(shell_quote "${VPN_CONTAINERS}")"
-    printf 'DIRECT_CIDRS=%s\n' "$(shell_quote "${DIRECT_CIDRS}")"
-    printf 'TELEGRAM_MSS=%s\n' "$(shell_quote "${TELEGRAM_MSS}")"
-    printf 'IP_CHECK_URL=%s\n' "$(shell_quote "${IP_CHECK_URL}")"
   } > "${CONFIG_FILE}"
   chmod 600 "${CONFIG_FILE}"
 }
@@ -142,7 +122,7 @@ conn nl-ikev2
     eap_identity=${VPN_IDENTITY}
     leftsourceip=%config
 
-    auto=start
+    auto=add
     keyingtries=%forever
     dpdaction=restart
     dpddelay=15s
@@ -165,32 +145,18 @@ EOF
 }
 
 install_runtime_files() {
-  local vpn_script policy_script service_file
+  local vpn_script
   vpn_script="$(repo_file scripts/vpn)"
-  policy_script="$(repo_file scripts/vpn-policy-routing.sh)"
-  service_file="$(repo_file systemd/vpn-policy-routing.service)"
   install -m 0755 "${vpn_script}" /usr/local/bin/vpn
-  install -m 0755 "${policy_script}" /usr/local/sbin/vpn-policy-routing.sh
-  install -m 0644 "${service_file}" /etc/systemd/system/vpn-policy-routing.service
-}
-
-ensure_user() {
-  if ! id -u "${VPN_USER}" >/dev/null 2>&1; then
-    useradd -m -s /bin/bash "${VPN_USER}"
-  fi
 }
 
 enable_services() {
+  systemctl disable --now vpn-policy-routing.service 2>/dev/null || true
+  rm -f /etc/systemd/system/vpn-policy-routing.service
   systemctl daemon-reload
   systemctl enable strongswan-starter.service
   systemctl restart strongswan-starter.service
-  systemctl enable vpn-policy-routing.service
-  systemctl restart vpn-policy-routing.service
-  if [[ "${AUTO_ENABLE_ROOT}" == "1" ]]; then
-    vpn on
-  else
-    vpn status || true
-  fi
+  vpn on
 }
 
 print_summary() {
@@ -200,12 +166,7 @@ Installed.
 
 Checks:
   sudo vpn status
-  sudo runuser -u ${VPN_USER} -- curl -4 -s ${IP_CHECK_URL}
   sudo ipsec statusall
-
-Run Codex through VPN:
-  sudo -iu ${VPN_USER}
-  codex
 
 Config:
   ${CONFIG_FILE}
@@ -220,7 +181,6 @@ main() {
   write_config
   write_strongswan_config
   install_runtime_files
-  ensure_user
   enable_services
   print_summary
 }

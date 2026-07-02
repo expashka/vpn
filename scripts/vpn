@@ -1,143 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_FILE="${CODEX_VPN_CONFIG:-/etc/codex-vpn.env}"
-if [[ -r "${CONFIG_FILE}" ]]; then
-  # shellcheck disable=SC1090
-  source "${CONFIG_FILE}"
-fi
-
-TABLE_ID="${TABLE_ID:-200}"
-TABLE_NAME="${TABLE_NAME:-codexvpn}"
-ROOT_PREF="${ROOT_PREF:-210}"
-ROOT_V6_PREF="${ROOT_V6_PREF:-211}"
-IP_CHECK_URL="${IP_CHECK_URL:-https://api.ipify.org}"
+CONNECTION="${VPN_CONNECTION:-nl-ikev2}"
 
 usage() {
-  cat <<USAGE
-Usage: vpn on|off|status
-
-Controls VPN policy routing for root (UID 0) only.
-It does not change the always-on routing rule for VPN_USER.
-USAGE
+  echo "Использование: vpn on|off|status"
 }
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
-    echo "Run as root: sudo vpn $*" >&2
+    echo "Запустите от root: sudo vpn ${1:-}" >&2
     exit 1
-  fi
-}
-
-ensure_table() {
-  if ! ip route show table "${TABLE_ID}" >/dev/null 2>&1; then
-    echo "Routing table ${TABLE_ID} (${TABLE_NAME}) is not available" >&2
-    exit 1
-  fi
-}
-
-detect_ipsec_vip() {
-  ip -d xfrm policy 2>/dev/null | awk '
-    $1=="src" && $3=="dst" && $4=="0.0.0.0/0" {
-      split($2,a,"/");
-      cand=a[1];
-      getline;
-      if ($1=="dir" && $2=="out") { print cand; exit }
-    }'
-}
-
-main_route_parts() {
-  local route
-  route="$(ip -4 route show table main default | sed -n '1p')"
-  if [[ -z "${route}" ]]; then
-    return 1
-  fi
-  awk '
-    /^default/ {
-      for (i = 1; i <= NF; i++) {
-        if ($i == "via") gw=$(i+1);
-        if ($i == "dev") dev=$(i+1);
-        if ($i == "src") src=$(i+1);
-      }
-      print gw, dev, src;
-    }' <<<"${route}"
-}
-
-detect_main_src() {
-  local src
-  src="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')"
-  [[ -n "${src}" ]] && printf '%s\n' "${src}"
-}
-
-sync_default_route() {
-  local preferred_src="${1:-}" gw dev src
-  read -r gw dev src < <(main_route_parts) || {
-    echo "No IPv4 default route in main table; cannot sync ${TABLE_NAME}" >&2
-    return 1
-  }
-  if [[ -z "${src}" ]]; then
-    src="$(detect_main_src || true)"
-  fi
-  if [[ -z "${gw}" || -z "${dev}" ]]; then
-    echo "Failed to parse main default route" >&2
-    return 1
-  fi
-
-  if [[ -n "${preferred_src}" ]]; then
-    ip addr add "${preferred_src}/32" dev lo 2>/dev/null || true
-    ip route replace table "${TABLE_ID}" default via "${gw}" dev "${dev}" src "${preferred_src}"
-    return 0
-  fi
-
-  if [[ -n "${src}" ]]; then
-    ip route replace table "${TABLE_ID}" default via "${gw}" dev "${dev}" src "${src}"
-  else
-    ip route replace table "${TABLE_ID}" default via "${gw}" dev "${dev}"
-  fi
-}
-
-root_rule_present() {
-  ip rule show | grep -Eq "uidrange 0-0 lookup (${TABLE_NAME}|${TABLE_ID})"
-}
-
-print_current_ip() {
-  local ip
-  ip="$(curl -4 -s --max-time 8 "${IP_CHECK_URL}" 2>/dev/null || true)"
-  if [[ -n "${ip}" ]]; then
-    echo "root external IPv4: ${ip}"
-  else
-    echo "root external IPv4: check failed" >&2
   fi
 }
 
 case "${1:-}" in
   on)
-    require_root "$@"
-    ensure_table
-    sync_default_route "$(detect_ipsec_vip)"
-    ip rule del pref "${ROOT_PREF}" 2>/dev/null || true
-    ip -6 rule del pref "${ROOT_V6_PREF}" 2>/dev/null || true
-    ip rule add pref "${ROOT_PREF}" uidrange 0-0 lookup "${TABLE_ID}"
-    ip -6 rule add pref "${ROOT_V6_PREF}" uidrange 0-0 prohibit
-    echo "root VPN routing: on"
-    print_current_ip
+    require_root on
+    ipsec up "${CONNECTION}"
     ;;
   off)
-    require_root "$@"
-    ip rule del pref "${ROOT_PREF}" 2>/dev/null || true
-    ip -6 rule del pref "${ROOT_V6_PREF}" 2>/dev/null || true
-    echo "root VPN routing: off"
-    print_current_ip
+    require_root off
+    ipsec down "${CONNECTION}" 2>/dev/null || true
+    echo "VPN ${CONNECTION}: выключен"
     ;;
   status)
-    if root_rule_present; then
-      echo "root VPN routing: on"
-    else
-      echo "root VPN routing: off"
-    fi
-    print_current_ip
-    echo
-    ip rule show | sed -n '/uidrange 0-0/p;/uidrange .*lookup/p'
+    ipsec status "${CONNECTION}"
     ;;
   -h|--help|help)
     usage
